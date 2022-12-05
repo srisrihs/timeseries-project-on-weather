@@ -1,0 +1,311 @@
+import numpy as np
+import pandas as pd
+import datetime as dt
+pd.re
+
+df = pd.read_csv('train.v2.csv.gz')
+df
+import seaborn as sns
+sns.set()
+
+import numpy as np
+import pandas as pd
+import datetime as dt
+
+# Time Series Data: Predict Temperature
+
+Time series prediction presents its own challenges which are different from machine-learning problems.  As with many other classes of problems, there are a number of common features in these predictions.
+
+
+## Fetch the data:
+
+The data can be loaded into pandas easily:
+
+pd.re
+
+df = pd.read_csv('train.v2.csv.gz')
+df
+
+df.info()
+
+df=df[df['temp'] != 'M'].copy()
+df['temp'] = df['temp'].astype(float)
+
+y = df['temp']
+
+from sklearn.model_selection import train_test_split
+df_train,df_test,y_train,y_test=train_test_split(df,y)
+
+df_test['temp']!=-9999
+
+df['temp']=pd.to_numeric(df['temp'], errors='coerce')
+df['time']=pd.to_datetime(df["time"], errors='coerce')
+df['Dates'] = pd.to_datetime(df['time']).dt.date
+df['Time'] = pd.to_datetime(df['time']).dt.time
+df['year']=pd.to_datetime(df['time']).dt.year
+df['month']=pd.to_datetime(df['time']).dt.month
+df['day']=pd.to_datetime(df['time']).dt.day
+df['hour']=pd.to_datetime(df['time']).dt.hour
+
+df['dew_point']=pd.to_numeric(df['dew_point'], errors='coerce')
+df['dew_point']=pd.to_numeric(df['dew_point'], errors='coerce')
+df['wind_speed']=pd.to_numeric(df['wind_speed'], errors='coerce')
+df['wind_direction']=pd.to_numeric(df['wind_direction'], errors='coerce')
+df['weather_codes']=pd.to_numeric(df['weather_codes'], errors='coerce')
+df['precip_hour']=pd.to_numeric(df['precip_hour'], errors='coerce')
+df['pressure']=pd.to_numeric(df['pressure'], errors='coerce')
+
+df.columns
+
+df= df[['year', 'month', 'day', 'hour', 'temp','dew_point','pressure',
+        'wind_speed','wind_direction','weather_codes','precip_hour','station']]
+
+df['station'].unique()
+
+df.fillna(-9999, inplace=True)
+
+df = df[df['temp']!=-9999]
+
+df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+#df.fillna(999, inplace=True)
+
+#df = df.reset_index()
+
+The `station` column indicates the city.  The `time` is measured in UTC.  Both `temp` and `dew_point` are measured in degrees Fahrenheit.  The `wind_speed` is in knots, and the `precip_hour` measures the hourly precipitation in inches.
+
+Missing values are indicated by a flag value.  Remove rows without valid temperature measurements.  You may also want to change some data types. (But keep in mind that the data provided by the grader will have the same data types as `pd.read_csv` provided.)
+
+#df_new=df.loc[df['temp'] !=-9999.000000].copy()
+
+df['temp'].plot()
+
+
+
+We will focus on using the temporal elements to predict the temperature.
+
+
+
+
+
+For each question, build a model to predict the temperature in a given city at a given time.  You will be given a DataFrame, as we got from `pd.read_csv`.  (As you can imagine, the temperature values will be nonsensical in the DataFrame you are given.)  Return a collection of predicted temperatures, one for each incoming row in the DataFrame.  
+
+## One-city model
+
+As you may have noticed, the data contains rows for multiple cities.  We'll deal with all of them soon, but for this first question, we'll focus on only the data from New York (`"NYC"`).  Start by isolating only those rows.
+
+df_nyc= df[df['station'].isin(['NYC'])]
+
+df_nyc.head(100)
+
+#df_nyc1=df_nyc.reindex()
+
+df_nyc.info()
+
+#df_nyc=df_nyc.dropna()
+
+df_nyc.info()
+
+df_nyc['temp'].plot()
+
+Seasonal features are nice because they are relatively safe to extrapolate into the future. There are two ways to handle seasonality.  
+
+The simplest (and perhaps most robust) is to have a set of indicator variables. That is, make the assumption that the temperature at any given time is a function of only the month of the year and the hour of the day, and use that to predict the temperature value.
+
+**Question**: Should month be a continuous or categorical variable?  (Recall that [one-hot encoding](http://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OneHotEncoder.html) is useful to deal with categorical variables.)
+
+Build a model to predict the temperature for a given hour in a given month in New York.
+
+from sklearn import base
+
+class GroupEstimator(base.BaseEstimator, base.RegressorMixin):
+    def __init__(self,column, estimator_factory):
+        self.column=column
+        self.estimator_factory=estimator_factory
+    
+    def fit(self,X,y):
+        u_vals = X[self.column].unique()
+        self.model_dict= {u_val:self.estimator_factory() for u_val in u_vals}
+        for val,estimator in self.model_dict.items():
+            mask=(X[self.column] == val)
+            estimator.fit(X[mask],y[mask])
+        return self
+    def predict(self, X):
+        X['preds']=np.nan
+        for val,estimator in self.model_dict.items():
+            X.loc[X[X[self.column]==val].index,'preds'] = estimator.predict(X[X[self.column]==val])
+        return X['preds']
+
+class TempPredictor(base.BaseEstimator, base.RegressorMixin):
+    def fit(self,X, y=None):
+        X=pd.concat([X,X['time'].str.extract(r'^[0-9]{4}-(?P<month>[0-9]{2})-[0-9]{2}\s(?P<hour>[0-9]{2})')],axis=1)
+        X['monthhour']=X['month'].astype(str)+X['hour'].astype(str)
+        X['temp']=pd.to_numeric(y,errors='coerce')
+        self.table=X[['monthhour','temp']].groupby(['monthhour']).mean()
+        return self
+    def predict(self,X):
+        preds=[]
+        X=pd.concat([X,X['time'].str.extract(r'^[0-9]{4}-(?P<month>[0-9]{2})-[0-9]{2}\s(?P<hour>[0-9]{2})')],axis=1)
+        X['monthhour']=X['month'].astype(str)+X['hour'].astype(str)
+        for monthhour in X['monthhour']:
+            preds.append(self.table['temp'][self.table.index==monthhour][0])
+        return preds
+
+from sklearn import base
+
+def season_factory():
+    return TempPredictor()
+
+set(df_nyc['station'])
+
+season_model = GroupEstimator('station', season_factory).fit(df, df['temp'])
+
+season_model.score(df_test, y_test)
+
+
+
+
+
+from sklearn.model_selection import train_test_split
+dfn_train,dfn_test,yn_train,yn_test=train_test_split(df_nyc, df_nyc['temp'])
+
+season_model1 = GroupEstimator('station', season_factory).fit(dfn_train, dfn_train['temp'])
+
+season_model1.score(dfn_test, yn_test)
+
+
+pd.DataFrame({'original test set':y_test, 'predictions': preds})
+
+
+
+## Per-city model
+
+Now we want to extend this same model to handle all of the cities in our data set.  Rather than adding features to the existing model to handle this, we'll just make a new copy of the model for each city.
+
+If your model is a single class, then this is easy&mdash;you can just instantiate your class once per city.  But it's more likely your model was a particular instance of a Pipeline.  If that's the case, make a **factory function** that returns a new copy of that Pipeline each time it's called.
+
+Calling this function should give a new copy of the Pipeline.  If we train that new copy on the New York data, it should give us the same model as before.  (You might check this by submitting such a model to the previous `grader.score` call.)
+
+While we could manually call this function for each city in our dataset, let's build a "group-by" estimator that does this for us.  This estimator should take a column name and a factory function as an argument.  The `fit` method will group the incoming data by that column, and for each group it will call the factory to create a new instance to be trained by on that group.  Then, the `predict` method should look up the corresponding model for each row and perform a predict using that model.
+
+Now, we should be able to build an equivalent model for each city:
+
+season_model = GroupbyEstimator('station', season_factory).fit(df, df['temp'])
+
+Again, as long as this model accepts a DataFrame as input, you should be able to pass the `predict` method to the grader.
+
+import pandas as pd
+def answer(x):
+    output = []
+    X = []
+    labels = ['month','hour','city']
+    for r in x:
+        l = r.split()
+        X.append([l[1],l[3],l[-1]])
+    data = pd.DataFrame.from_records(X, columns=labels)
+    return season_model.predict(data)
+
+## Handling data in arbitrary order
+
+Submit the same model again to the following scorer:
+
+
+
+But if your model suddenly behaved worse: In the previous question, we provided each city's rows in contiguous groups.  In this question, the rows were all shuffled together.  If you were predicting for a group at a time and just appending those grouped predictions for the final output, it'll be in the wrong order.
+
+There are two ways to fix this:
+1. Predict for each row individually.  This is straightforward, but very, _very_ slow.
+2. Predict for each group, and then reorder the predictions to match the input order.  A common way to do this is to attach the index of the feature matrix to the predictions, and then order the full prediction series by the index of the feature matrix.
+
+Once you've fixed your `GroupbyEstimator.predict` method, resubmit to this question.
+
+## Fourier model
+
+Let's consider another way to deal with the seasonal terms.  Since we know that temperature is roughly sinusoidal, we know that a reasonable model might be
+
+$$ y_t = y_0 \sin\left(2\pi\frac{t - t_0}{T}\right) + \epsilon $$
+
+where $y_0$ and $t_0$ are parameters to be learned and $T$ is the period - one year for seasonal variation, one day for daily, etc.  While this is linear in $y_0$, it is not linear in $t_0$. However, we know from Fourier analysis, that the above is
+equivalent to
+
+$$ y_t = A \sin\left(2\pi\frac{t}{T}\right) + B \cos\left(2\pi\frac{t}{T}\right) + \epsilon $$
+
+which is linear in $A$ and $B$.
+
+Create a model containing sinusoidal terms on one or more time scales, and fit it to the data using a linear regression.  Build a `fourier_factory` function that will return instances of this model.
+
+A general `GroupByEstimator` should be able to take the new factory function and build a model for each city.
+
+
+
+Submit this model to the grader.
+
+class get_fourier(base.BaseEstimator, base.RegressorMixin):
+    def fit(self, new_df, y=None):
+        return self
+    
+    def transform(self,new_df):
+        new_df.time=pd.to_datetime(new_df.time)
+        new_df.time=pd.to_datetime(new_df.time)
+        hourlist=new_df.time.apply(lambda x: x.hour)
+        monthlist = new_df.time.apply(lambda x: x.month)
+        new_df['month'] =  monthlist
+        new_df['hour'] =  hourlist
+        new_df['sin(mo)'] = np.sin(new_df['month'] / 12 * 2 * np.pi)
+        new_df['cos(mo)'] = np.cos(new_df['month'] / 12 * 2 * np.pi)
+        #X['sin(6mo)'] = np.sin(X['julian'] / (24) * 2 * np.pi)
+       # X['cos(6mo)'] = np.cos(X['julian'] / (24) * 2 * np.pi)
+        new_df['sin(hour)'] = np.sin(new_df['hour'] / 24.0 * 2* np.pi)
+        new_df['cos(hour)'] = np.cos(new_df['hour'] / 24.0 * 2* np.pi)
+        X=new_df[['sin(mo)','cos(mo)','sin(hour)','cos(hour)']]
+        return X
+
+def fourier_fact():
+    pipe1=Pipeline([('mh', get_fourier()),('lin', LinearRegression())])
+    return pipe1
+
+from sklearn import base
+
+class GroupbyEstimator(base.BaseEstimator, base.RegressorMixin):
+    
+    def __init__(self, column, estimator_factory):
+        self.column = column
+        self.estimator_factory= estimator_factory
+       
+        # column is the value to group by; estimator_factory can be
+        # called to produce estimators
+    
+    def fit(self, X, y):
+        self.pipedict=dict()
+        
+        for group in X[self.column].unique():
+            ind = (X[self.column]==group)
+            pipe=self.estimator_factory()
+            pipe.fit(X[ind],y[ind])
+            self.pipedict[group]=pipe
+        return self
+
+    def predict(self, X):
+        
+        grouplist=list(X[self.column].unique())
+        ind_list = []
+        pred_list = []
+        X.reset_index(inplace=True)
+        for group in grouplist:
+            Xi=X[X[self.column] == group]
+            ind=list(Xi.index)
+            pipe=self.pipedict[group]
+            pred=list(pipe.predict(Xi))
+            ind_list += ind
+            pred_list +=pred
+        ind_pred = list(zip(ind_list,pred_list))
+        ind_pred.sort(key= lambda x: x[0])
+        out= np.array(list(zip(*ind_pred))[1])
+            
+     
+        return out
+
+fourier_model = GroupbyEstimator('station', fourier_fact).fit(df_train, y_train)
+
+fourier_model.score(df_test,y_test)
+
